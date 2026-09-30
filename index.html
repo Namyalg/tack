@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c1917">
+<title>Tack — scan, then say why</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<style>
+  :root {
+    --paper: #faf7f2;
+    --card: #fffdf8;
+    --ink: #1c1917;
+    --ink-soft: #78716c;
+    --line: #e7e1d8;
+    --accent: #b45309;
+    --accent-bg: #f5b544;
+    --done: #4d7c4f;
+    --danger: #b02a1e;
+    --radius: 14px;
+    --shadow: 0 1px 2px rgba(28,25,23,.06), 0 6px 16px -8px rgba(28,25,23,.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #16130f;
+      --card: #231f1a;
+      --ink: #f3eee5;
+      --ink-soft: #a8a29e;
+      --line: #35302a;
+      --accent: #f5b544;
+      --accent-bg: #f5b544;
+      --done: #8ec48f;
+      --danger: #f08a7e;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 16px -8px rgba(0,0,0,.6);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.5 ui-rounded, "SF Pro Rounded", -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    overscroll-behavior-y: contain;
+  }
+  header {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: baseline; gap: 10px;
+    padding: calc(14px + env(safe-area-inset-top)) 18px 12px;
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  h1 { font-size: 21px; margin: 0; letter-spacing: -.02em; }
+  .tally { font-size: 13px; color: var(--ink-soft); margin-left: auto; font-variant-numeric: tabular-nums; }
+  main { padding: 16px 14px 0; max-width: 620px; margin: 0 auto; }
+
+  button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+  .btn {
+    border-radius: 10px; padding: 9px 14px; font-size: 14px; font-weight: 600;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    transition: transform .08s ease;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--accent-bg); border-color: transparent; color: #1c1917; }
+  .btn-ghost { border-color: transparent; color: var(--ink-soft); padding: 8px 10px; }
+  .btn-danger { color: var(--danger); }
+
+  /* ---- scanner ---- */
+  #scanner { margin-bottom: 18px; }
+  .frame {
+    position: relative; border-radius: var(--radius); overflow: hidden;
+    background: #000; aspect-ratio: 3 / 4; max-height: 62vh; margin-inline: auto;
+  }
+  .frame video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .reticle {
+    position: absolute; inset: 14%;
+    border-radius: 18px;
+    box-shadow: 0 0 0 100vmax rgba(0,0,0,.42);
+    border: 2px solid rgba(255,255,255,.85);
+  }
+  .hint {
+    position: absolute; left: 0; right: 0; bottom: 12px; text-align: center;
+    color: #fff; font-size: 13px; text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  }
+  .scan-actions { display: flex; gap: 8px; margin-top: 10px; justify-content: center; }
+
+  /* ---- cards ---- */
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 13px 14px 10px; position: relative;
+    border-left: 4px solid var(--accent-bg);
+  }
+  .card.done { opacity: .58; border-left-color: var(--done); }
+  .card.draft { border-left-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-bg) 35%, transparent), var(--shadow); }
+  .card-link {
+    display: block; font-size: 14px; font-weight: 600; color: var(--accent);
+    text-decoration: none; overflow-wrap: anywhere; line-height: 1.35;
+  }
+  .card-link:hover { text-decoration: underline; }
+  .card.done .card-link { text-decoration: line-through; }
+  .url-input {
+    border: none; background: none; padding: 2px 0; width: 100%;
+    font: inherit; font-size: 14px; font-weight: 600; color: var(--accent);
+    border-bottom: 1px dashed var(--line);
+  }
+  .url-input:focus { outline: none; border-bottom-color: var(--accent); }
+  .note {
+    display: block; width: 100%; margin-top: 8px; padding: 0;
+    border: none; background: none; color: var(--ink); resize: none;
+    font: inherit; font-size: 15px; line-height: 1.45; min-height: 1.45em;
+    overflow: hidden;
+  }
+  .note:focus { outline: none; }
+  .note::placeholder { color: var(--ink-soft); }
+  .card-foot {
+    display: flex; align-items: center; gap: 2px;
+    margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line);
+  }
+  .when { font-size: 12px; color: var(--ink-soft); margin-right: auto; }
+  .icon-btn {
+    padding: 6px 9px; border-radius: 8px; font-size: 12.5px; font-weight: 600;
+    color: var(--ink-soft);
+  }
+  .icon-btn:active { background: var(--paper); }
+  .icon-btn.on { color: var(--done); }
+  .empty { text-align: center; color: var(--ink-soft); padding: 48px 24px; font-size: 15px; }
+  .empty strong { display: block; color: var(--ink); font-size: 17px; margin-bottom: 6px; }
+
+  /* ---- toolbar ---- */
+  .tools { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
+  .search {
+    flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink); font: inherit; font-size: 14px;
+  }
+  .search:focus { outline: 2px solid var(--accent-bg); outline-offset: -1px; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--card); }
+  .seg button { padding: 9px 11px; font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+  .seg button[aria-pressed="true"] { background: var(--accent-bg); color: #1c1917; }
+
+  /* ---- bottom bar ---- */
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    display: flex; gap: 10px; align-items: center;
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--paper) 92%, transparent);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--line);
+  }
+  .bar .btn-primary { flex: 1; padding: 14px; font-size: 16px; border-radius: 12px; }
+  #toast {
+    position: fixed; left: 50%; transform: translateX(-50%) translateY(20px);
+    bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 50;
+    background: var(--ink); color: var(--paper); padding: 10px 16px;
+    border-radius: 999px; font-size: 14px; opacity: 0; pointer-events: none;
+    transition: opacity .2s, transform .2s;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Tack</h1>
+  <span class="tally" id="tally"></span>
+</header>
+
+<main>
+  <section id="scanner" hidden>
+    <div class="frame">
+      <video id="video" playsinline muted autoplay></video>
+      <div class="reticle"></div>
+      <p class="hint" id="scanHint">Point at the QR code</p>
+    </div>
+    <div class="scan-actions">
+      <button class="btn" id="cancelScan">Cancel</button>
+    </div>
+  </section>
+
+  <div class="tools">
+    <input class="search" id="search" type="search" placeholder="Search links and notes" autocomplete="off">
+    <div class="seg" role="group" aria-label="Filter">
+      <button id="fAll" aria-pressed="true">All</button>
+      <button id="fOpen" aria-pressed="false">Open</button>
+    </div>
+  </div>
+
+  <ul id="list"></ul>
+
+  <div class="empty" id="empty" hidden>
+    <strong>Nothing tacked up yet</strong>
+    Scan someone's QR code, then write what you owe them.
+  </div>
+</main>
+
+<div class="bar">
+  <button class="btn btn-primary" id="scanBtn">Scan a QR code</button>
+  <button class="btn" id="photoBtn" title="Decode a QR from a photo">Photo</button>
+  <button class="btn" id="manualBtn" title="Add a link by hand">Paste</button>
+  <button class="btn btn-ghost" id="exportBtn" title="Export everything as JSON">Export</button>
+</div>
+
+<input type="file" id="photoInput" accept="image/*" hidden>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="./vendor/jsQR.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const KEY = 'tack.v1';
+  const $ = (id) => document.getElementById(id);
+  let items = load();
+  let filter = 'all';
+  let query = '';
+  let stream = null;
+  let rafId = null;
+  let detector = null;
+  let draftId = null;
+  const editing = new Set();
+
+  /* ---------------- storage ---------------- */
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (err) {
+      console.error('could not read saved items', err);
+      return [];
+    }
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(items));
+    } catch (err) {
+      toast('Could not save — storage is full');
+      console.error(err);
+    }
+  }
+
+  /* ---------------- rendering ---------------- */
+
+  function relTime(ts) {
+    const mins = Math.round((Date.now() - ts) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + 'm ago';
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return hrs + 'h ago';
+    const days = Math.round(hrs / 24);
+    if (days < 7) return days + 'd ago';
+    return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  function pretty(url) {
+    try {
+      const u = new URL(url);
+      return (u.hostname + u.pathname).replace(/^www\./, '').replace(/\/$/, '');
+    } catch {
+      return url;
+    }
+  }
+
+  function matches(item) {
+    if (filter === 'open' && item.done) return false;
+    if (!query) return true;
+    return (item.url + ' ' + item.note).toLowerCase().includes(query);
+  }
+
+  function autosize(el) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }
+
+  function render() {
+    const list = $('list');
+    const visible = items.filter(matches);
+    list.textContent = '';
+
+    for (const item of visible) {
+      const li = document.createElement('li');
+      li.className = 'card' + (item.done ? ' done' : '') + (item.id === draftId ? ' draft' : '');
+
+      if (item.url && !editing.has(item.id)) {
+        const link = document.createElement('a');
+        link.className = 'card-link';
+        link.href = item.url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = pretty(item.url);
+        li.append(link);
+      } else {
+        const input = document.createElement('input');
+        input.className = 'card-link url-input';
+        input.type = 'url';
+        input.inputMode = 'url';
+        input.placeholder = 'https://…';
+        input.value = item.url;
+        input.addEventListener('input', () => { item.url = input.value.trim(); save(); });
+        input.addEventListener('blur', () => {
+          if (item.url) { editing.delete(item.id); render(); }
+        });
+        li.append(input);
+        if (!item.url) requestAnimationFrame(() => input.focus());
+      }
+
+      const note = document.createElement('textarea');
+      note.className = 'note';
+      note.rows = 1;
+      note.value = item.note;
+      note.placeholder = 'What is the follow-up?';
+      note.addEventListener('input', () => {
+        item.note = note.value;
+        item.updated = Date.now();
+        autosize(note);
+        save();
+        updateTally();
+      });
+      li.append(note);
+
+      const foot = document.createElement('div');
+      foot.className = 'card-foot';
+
+      const when = document.createElement('span');
+      when.className = 'when';
+      when.textContent = relTime(item.created);
+      foot.append(when);
+
+      foot.append(
+        mkBtn(item.done ? '✓ Done' : 'Mark done', item.done ? 'icon-btn on' : 'icon-btn', () => {
+          item.done = !item.done;
+          save();
+          render();
+        }),
+        mkBtn('Edit link', 'icon-btn', () => {
+          editing.add(item.id);
+          render();
+        }),
+        mkBtn('Copy', 'icon-btn', async () => {
+          try {
+            await navigator.clipboard.writeText(item.url);
+            toast('Link copied');
+          } catch {
+            toast('Could not copy');
+          }
+        }),
+        mkDelete(item),
+      );
+
+      li.append(foot);
+      list.append(li);
+
+      requestAnimationFrame(() => autosize(note));
+      if (item.id === draftId) {
+        note.focus();
+        draftId = null;
+      }
+    }
+
+    const empty = $('empty');
+    empty.hidden = visible.length > 0;
+    const filtered = items.length > 0;
+    empty.querySelector('strong').textContent =
+      filtered ? 'Nothing matches' : 'Nothing tacked up yet';
+    empty.lastChild.textContent =
+      filtered ? ' Try a different search or filter.'
+               : " Scan someone's QR code, then write what you owe them.";
+    updateTally();
+  }
+
+  function mkBtn(label, cls, onClick) {
+    const b = document.createElement('button');
+    b.className = cls;
+    b.textContent = label;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  // Two-step delete — a browser confirm() dialog is heavy on a phone.
+  function mkDelete(item) {
+    const b = mkBtn('Delete', 'icon-btn btn-danger', () => {
+      if (b.dataset.armed) {
+        items = items.filter((x) => x !== item);
+        save();
+        render();
+        toast('Deleted');
+        return;
+      }
+      b.dataset.armed = '1';
+      b.textContent = 'Sure?';
+      setTimeout(() => {
+        delete b.dataset.armed;
+        b.textContent = 'Delete';
+      }, 3000);
+    });
+    return b;
+  }
+
+  function updateTally() {
+    const open = items.filter((i) => !i.done).length;
+    $('tally').textContent = items.length === 0
+      ? ''
+      : `${items.length} tacked · ${open} open`;
+  }
+
+  let toastTimer;
+  function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  /* ---------------- adding ---------------- */
+
+  function add(url) {
+    const item = {
+      id: (crypto.randomUUID && crypto.randomUUID()) || String(Date.now() + Math.random()),
+      url: url.trim(),
+      note: '',
+      done: false,
+      created: Date.now(),
+      updated: Date.now(),
+    };
+    items.unshift(item);
+    draftId = item.id;
+    filter = 'all';
+    query = '';
+    $('search').value = '';
+    syncFilterButtons();
+    save();
+    render();
+    if (navigator.vibrate) navigator.vibrate(40);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /* ---------------- decoding ---------------- */
+
+  async function getDetector() {
+    if (detector !== null) return detector;
+    detector = false;
+    if ('BarcodeDetector' in window) {
+      try {
+        const formats = await window.BarcodeDetector.getSupportedFormats();
+        if (formats.includes('qr_code')) {
+          detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+        }
+      } catch (err) {
+        console.warn('BarcodeDetector unavailable, falling back to jsQR', err);
+      }
+    }
+    return detector;
+  }
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  function decodeWithJsQR(source, w, h) {
+    canvas.width = w;
+    canvas.height = h;
+    ctx.drawImage(source, 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h);
+    const found = jsQR(data.data, w, h, { inversionAttempts: 'attemptBoth' });
+    return found && found.data ? found.data : null;
+  }
+
+  async function decodeFrame(source, w, h) {
+    const det = await getDetector();
+    if (det) {
+      try {
+        const codes = await det.detect(source);
+        if (codes.length && codes[0].rawValue) return codes[0].rawValue;
+        return null;
+      } catch (err) {
+        console.warn('detect() failed, using jsQR for this frame', err);
+      }
+    }
+    return decodeWithJsQR(source, w, h);
+  }
+
+  /* ---------------- camera ---------------- */
+
+  async function startScan() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast('This browser has no camera access — use Photo');
+      return;
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+    } catch (err) {
+      console.error(err);
+      toast(err && err.name === 'NotAllowedError'
+        ? 'Camera permission denied'
+        : 'Could not open the camera');
+      return;
+    }
+
+    const video = $('video');
+    video.srcObject = stream;
+    $('scanner').hidden = false;
+    $('scanHint').textContent = 'Point at the QR code';
+    try {
+      await video.play();
+    } catch (err) {
+      console.warn('video.play() rejected', err);
+    }
+
+    let misses = 0;
+    const tick = async () => {
+      if (!stream) return;
+      if (video.readyState >= 2 && video.videoWidth) {
+        let value = null;
+        try {
+          value = await decodeFrame(video, video.videoWidth, video.videoHeight);
+        } catch (err) {
+          console.error('decode error', err);
+        }
+        if (value) {
+          stopScan();
+          add(value);
+          toast('Scanned — now write the follow-up');
+          return;
+        }
+        if (++misses === 90) $('scanHint').textContent = 'Hold steady, fill the box with the code';
+      }
+      rafId = requestAnimationFrame(() => { tick(); });
+    };
+    tick();
+  }
+
+  function stopScan() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop());
+      stream = null;
+    }
+    $('video').srcObject = null;
+    $('scanner').hidden = true;
+  }
+
+  /* ---------------- photo fallback ---------------- */
+
+  async function decodePhoto(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      // Cap the working size; full-resolution phone photos are slow to scan.
+      const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.round(img.naturalWidth * scale);
+      const h = Math.round(img.naturalHeight * scale);
+      const value = await decodeFrame(img, w, h)
+        || decodeWithJsQR(img, w, h); // detector may miss what jsQR catches
+      if (value) {
+        add(value);
+        toast('Found it — now write the follow-up');
+      } else {
+        toast('No QR code found in that image');
+      }
+    } catch (err) {
+      console.error(err);
+      toast('Could not read that image');
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  /* ---------------- export ---------------- */
+
+  function exportJSON() {
+    if (items.length === 0) {
+      toast('Nothing to export yet');
+      return;
+    }
+    const blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tack-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  /* ---------------- wiring ---------------- */
+
+  function syncFilterButtons() {
+    $('fAll').setAttribute('aria-pressed', String(filter === 'all'));
+    $('fOpen').setAttribute('aria-pressed', String(filter === 'open'));
+  }
+
+  $('scanBtn').addEventListener('click', startScan);
+  $('cancelScan').addEventListener('click', stopScan);
+  $('photoBtn').addEventListener('click', () => $('photoInput').click());
+  $('photoInput').addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) decodePhoto(file);
+    e.target.value = '';
+  });
+  $('manualBtn').addEventListener('click', async () => {
+    let text = '';
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      /* clipboard read may be blocked; fall through to an empty card */
+    }
+    add(text && /^https?:\/\//i.test(text.trim()) ? text.trim() : '');
+    toast(text ? 'Pasted from clipboard' : 'Blank card — edit the link below');
+  });
+  $('exportBtn').addEventListener('click', exportJSON);
+  $('search').addEventListener('input', (e) => {
+    query = e.target.value.trim().toLowerCase();
+    render();
+  });
+  $('fAll').addEventListener('click', () => { filter = 'all'; syncFilterButtons(); render(); });
+  $('fOpen').addEventListener('click', () => { filter = 'open'; syncFilterButtons(); render(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopScan();
+  });
+
+  render();
+
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(() => {});
+  }
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('sw failed', err));
+    });
+  }
+
+  // Exposed so the smoke test can drive the pipeline without a camera.
+  window.__tack = { add, decodePhoto, decodeWithJsQR, get items() { return items; } };
+})();
+</script>
+</body>
+</html>
